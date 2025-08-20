@@ -1,0 +1,265 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASYT Downloader - Free YouTube Video Downloader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #f8fafc;
+            color: #1e293b;
+        }
+        .progress-fill {
+            background: linear-gradient(90deg, #3B82F6, #1E40AF);
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.4s ease;
+        }
+        .btn-disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mx-auto px-4 py-6 max-w-3xl">
+        <!-- App Header -->
+        <header class="flex justify-between items-center mb-8">
+            <div class="flex items-center space-x-3">
+                <div class="w-12 h-12 flex items-center justify-center rounded-full bg-gradient-to-r from-blue-500 to-purple-600">
+                    <i class="fas fa-cloud-download-alt text-white text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-bold">ASYT Downloader</h1>
+                    <p class="text-sm text-gray-500">by Aslam Sheikh</p>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Download Section -->
+        <div class="bg-white rounded-xl shadow-md p-6 mb-8">
+            <div class="relative mb-6">
+                <label for="youtubeUrl" class="sr-only">YouTube URL</label>
+                <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                    <i class="fas fa-link text-gray-400"></i>
+                </div>
+                <input
+                    type="text"
+                    id="youtubeUrl"
+                    placeholder="Paste YouTube URL here..."
+                    class="w-full pl-10 pr-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    aria-label="YouTube URL"
+                    autocomplete="off"
+                >
+            </div>
+            <button
+                id="downloadBtn"
+                class="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-3 rounded-lg transition-colors flex items-center justify-center"
+                aria-label="Download Video"
+            >
+                <i class="fas fa-download mr-2"></i> Download Video
+            </button>
+            <div id="errorMessage" class="text-red-500 text-sm mt-2 hidden" role="alert"></div>
+        </div>
+
+        <!-- Download Progress -->
+        <div id="downloadProgress" class="hidden bg-blue-50 rounded-lg p-4 mb-6">
+            <div class="flex justify-between items-center mb-2">
+                <span id="downloadTitle" class="font-medium">Preparing download...</span>
+                <span id="downloadPercent" class="text-sm font-medium">0%</span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-2">
+                <div id="progressBar" class="progress-fill" style="width: 0%"></div>
+            </div>
+            <div class="flex justify-between mt-2 text-xs text-gray-500">
+                <span id="downloadSpeed">Speed: 0 MB/s</span>
+                <span id="timeLeft">Time left: --:--</span>
+            </div>
+        </div>
+
+        <!-- Features Section -->
+        <div class="bg-white rounded-xl shadow-md p-6">
+            <h3 class="font-bold text-lg mb-4">Free Features</h3>
+            <ul class="space-y-3">
+                <li class="flex items-start">
+                    <i class="fas fa-check text-blue-500 mr-2 mt-1"></i>
+                    <span>Download HD videos up to 1080p</span>
+                </li>
+                <li class="flex items-start">
+                    <i class="fas fa-check text-blue-500 mr-2 mt-1"></i>
+                    <span>Extract MP3 audio from videos</span>
+                </li>
+                <li class="flex items-start">
+                    <i class="fas fa-check text-blue-500 mr-2 mt-1"></i>
+                    <span>No registration required</span>
+                </li>
+                <li class="flex items-start">
+                    <i class="fas fa-check text-blue-500 mr-2 mt-1"></i>
+                    <span>Works on all devices</span>
+                </li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // DOM elements
+        const downloadBtn = document.getElementById('downloadBtn');
+        const youtubeUrl = document.getElementById('youtubeUrl');
+        const downloadProgress = document.getElementById('downloadProgress');
+        const progressBar = document.getElementById('progressBar');
+        const downloadPercent = document.getElementById('downloadPercent');
+        const downloadTitle = document.getElementById('downloadTitle');
+        const downloadSpeed = document.getElementById('downloadSpeed');
+        const timeLeft = document.getElementById('timeLeft');
+        const errorMessage = document.getElementById('errorMessage');
+
+        // Autofocus input on load
+        window.onload = () => youtubeUrl.focus();
+
+        // Allow Enter key to trigger download
+        youtubeUrl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !downloadBtn.disabled) {
+                handleDownload();
+            }
+        });
+
+        // Event listeners
+        downloadBtn.addEventListener('click', handleDownload);
+        youtubeUrl.addEventListener('input', validateUrl);
+
+        // Prevent multiple downloads
+        let isDownloading = false;
+
+        // Validate YouTube URL
+        function validateUrl() {
+            const url = youtubeUrl.value.trim();
+            const isValid = url.includes('youtube.com') || url.includes('youtu.be');
+           
+            if (url && !isValid) {
+                errorMessage.textContent = 'Please enter a valid YouTube URL';
+                errorMessage.classList.remove('hidden');
+                downloadBtn.classList.add('btn-disabled');
+                downloadBtn.disabled = true;
+            } else {
+                errorMessage.classList.add('hidden');
+                downloadBtn.classList.remove('btn-disabled');
+                downloadBtn.disabled = false;
+            }
+        }
+
+        // Handle download
+        function handleDownload() {
+            if (isDownloading) return;
+            const url = youtubeUrl.value.trim();
+           
+            if (!url) {
+                errorMessage.textContent = 'Please enter a YouTube URL';
+                errorMessage.classList.remove('hidden');
+                return;
+            }
+           
+            if (!url.includes('youtube.com') && !url.includes('youtu.be')) {
+                errorMessage.textContent = 'Please enter a valid YouTube URL';
+                errorMessage.classList.remove('hidden');
+                return;
+            }
+           
+            // Disable button during download
+            downloadBtn.disabled = true;
+            downloadBtn.classList.add('btn-disabled');
+            downloadBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Downloading...';
+            isDownloading = true;
+           
+            // Show download progress
+            downloadProgress.classList.remove('hidden');
+            downloadTitle.textContent = 'Downloading video...';
+           
+            // Start download simulation
+            simulateDownload();
+        }
+
+        // Simulate download progress
+        function simulateDownload() {
+            let progress = 0;
+            let speed = 0;
+           
+            const interval = setInterval(() => {
+                progress += Math.random() * 10;
+                speed = 1 + Math.random() * 5;
+               
+                if (progress > 100) {
+                    progress = 100;
+                    clearInterval(interval);
+                    completeDownload();
+                }
+               
+                updateProgress(progress, speed);
+            }, 300);
+        }
+
+        function updateProgress(progress, speed) {
+            progressBar.style.width = `${progress}%`;
+            downloadPercent.textContent = `${Math.round(progress)}%`;
+            downloadSpeed.textContent = `Speed: ${speed.toFixed(1)} MB/s`;
+           
+            // Calculate time left
+            if (progress < 100) {
+                const remaining = (100 - progress) / (speed * 2);
+                const mins = Math.floor(remaining);
+                const secs = Math.floor((remaining - mins) * 60);
+                timeLeft.textContent = `Time left: ${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            }
+        }
+
+        function completeDownload() {
+            downloadTitle.textContent = 'Download complete!';
+           
+            // Extract video ID or generate random string for filename
+            const videoId = youtubeUrl.value.split('v=')[1]?.split('&')[0] || Math.random().toString(36).substring(2, 10);
+            const fileName = `asyt_video_${videoId}.mp4`;
+           
+            // Create download link
+            triggerDownload(fileName);
+           
+            // Reset UI
+            setTimeout(() => {
+                downloadBtn.disabled = false;
+                downloadBtn.classList.remove('btn-disabled');
+                downloadBtn.innerHTML = '<i class="fas fa-download mr-2"></i> Download Video';
+                youtubeUrl.value = '';
+                isDownloading = false;
+               
+                setTimeout(() => {
+                    downloadProgress.classList.add('hidden');
+                    progressBar.style.width = '0%';
+                }, 2000);
+            }, 1000);
+        }
+
+        function triggerDownload(filename) {
+            // In a real app, this would connect to your backend
+            // For simulation, we'll create a dummy download
+            const link = document.createElement('a');
+           
+            // Create a blob with some text to simulate a video file
+            const blob = new Blob(["This would be your video file content"], { type: 'video/mp4' });
+            const url = URL.createObjectURL(blob);
+           
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+           
+            // Clean up
+            setTimeout(() => {
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            }, 100);
+        }
+    </script>
+</body>
+</html>
