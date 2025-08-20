@@ -239,3 +239,169 @@
   </script>
 </body>
 </html>
+const express = require("express");
+const cors = require("cors");
+const morgan = require("morgan");
+const ytdl = require("ytdl-core");
+const sanitize = require("sanitize-filename");
+
+const ffmpeg = require("fluent-ffmpeg");
+const ffmpegPath = require("ffmpeg-static");
+ffmpeg.setFfmpegPath(ffmpegPath);
+
+const path = require("path");
+
+const app = express();
+app.use(cors());
+app.use(morgan("dev"));
+app.use(express.static("public")); // serve frontend
+
+// small helper
+function safeTitle(details) {
+  const raw = details?.title || "asyt_video";
+  return sanitize(raw).replace(/\s+/g, "_").substring(0, 120) || "asyt_video";
+}
+
+// ─────────────────────────────────────────────────────────────
+// VIDEO DOWNLOAD (auto-merge if needed)
+// GET /download/video?url=YOUTUBE_URL
+// Optional: &quality=best|1080|720|480|360
+// ─────────────────────────────────────────────────────────────
+app.get("/download/video", async (req, res) => {
+  try {
+    const videoURL = req.query.url;
+    const quality = (req.query.quality || "best").toLowerCase();
+
+    if (!videoURL || !ytdl.validateURL(videoURL)) {
+      return res.status(400).send("Invalid YouTube URL");
+    }
+
+    const info = await ytdl.getInfo(videoURL);
+    const title = safeTitle(info.videoDetails);
+
+    // choose quality
+    let videoQuality = "highestvideo";
+    if (["1080", "720", "480", "360"].includes(quality)) {
+      // map to 'itag' selection with ytdl filter later via ffmpeg (we'll still pick best match)
+      // We'll let ytdl pick closest by using qualityLabel filter below only when merging
+      videoQuality = "highestvideo";
+    }
+
+    // Try combined video+audio first (progressive) to avoid merging when possible
+    const progressiveFormat = ytdl
+      .filterFormats(info.formats, "videoandaudio")
+      .filter(f => f.container === "mp4")
+      .sort((a, b) => (b.height || 0) - (a.height || 0))[0];
+
+    const wantsProgressive =
+      quality === "best" ||
+      (progressiveFormat && ((progressiveFormat.height || 0) >= Number(quality)));
+
+    if (progressiveFormat && wantsProgressive) {
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${title}.mp4"`
+      );
+      res.setHeader("Content-Type", "video/mp4");
+      return ytdl(videoURL, {
+        quality: "highest",
+        filter: "videoandaudio",
+        dlChunkSize: 0
+      }).pipe(res);
+    }
+
+    // No good progressive? Merge separate video+audio with ffmpeg
+    const videoStream = ytdl(videoURL, {
+      quality: videoQuality,
+      filter: format => format.hasVideo && !format.hasAudio
+    });
+
+    const audioStream = ytdl(videoURL, {
+      quality: "highestaudio",
+      filter: "audioonly",
+      dlChunkSize: 0
+    });
+
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${title}.mp4"`
+    );
+    res.setHeader("Content-Type", "video/mp4");
+
+    // If user requested specific height (1080/720/480/360), hint ffmpeg to scale if source higher
+    const height = Number(quality);
+    const command = ffmpeg()
+      .addInput(videoStream)
+      .addInput(audioStream)
+      .outputOptions([
+        "-c:v libx264",
+        "-c:a aac",
+        "-movflags +faststart"
+      ]);
+
+    if ([1080, 720, 480, 360].includes(height)) {
+      // scale keeping aspect ratio, pad if necessary
+      command.videoFilters(`scale=-2:${height}`);
+    }
+
+    command.on("error", (err) => {
+      console.error("FFmpeg error:", err.message);
+      if (!res.headersSent) res.status(500).end("Failed to process video");
+    });
+
+    command.on("start", (cmd) => console.log("FFmpeg start:", cmd));
+    command.on("end", () => console.log("FFmpeg finished"));
+
+    command.format("mp4").pipe(res, { end: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Error downloading video");
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// AUDIO DOWNLOAD (transcode to MP3 for compatibility)
+// GET /download/audio?url=YOUTUBE_URL
+// ─────────────────────────────────────────────────────────────
+app.get("/download/audio", async (req, res) => {
+  try {
+    const videoURL = req.query.url;
+    if (!videoURL || !ytdl.validateURL(videoURL)) {
+      return res.status(400).send("Invalid YouTube URL");
+    }
+
+    const info = await ytdl.getInfo(videoURL);
+    const title = safeTitle(info.videoDetails);
+
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${title}.mp3"`
+    );
+    res.setHeader("Content-Type", "audio/mpeg");
+
+    const audioStream = ytdl(videoURL, {
+      quality: "highestaudio",
+      filter: "audioonly",
+      dlChunkSize: 0
+    });
+
+    ffmpeg(audioStream)
+      .audioCodec("libmp3lame")
+      .audioBitrate(192)
+      .format("mp3")
+      .on("error", (err) => {
+        console.error("FFmpeg error:", err.message);
+        if (!res.headersSent) res.status(500).end("Failed to process audio");
+      })
+      .pipe(res, { end: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Error downloading audio");
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () =>
+  console.log(`✅ Server running at http://localhost:${PORT}`)
+);
