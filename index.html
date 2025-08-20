@@ -405,3 +405,32 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () =>
   console.log(`✅ Server running at http://localhost:${PORT}`)
 );
+const express = require("express");
+const ytdl = require("ytdl-core");
+const path = require("path");
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Serve static files
+app.use(express.static(path.join(__dirname, "public")));
+
+// API endpoint to download video
+app.get("/download", async (req, res) => {
+    const videoUrl = req.query.url;
+    if (!videoUrl || !ytdl.validateURL(videoUrl)) {
+        return res.status(400).send("Invalid YouTube URL");
+    }
+
+    try {
+        const info = await ytdl.getInfo(videoUrl);
+        const title = info.videoDetails.title.replace(/[^\w\s]/gi, "");
+        res.header("Content-Disposition", `attachment; filename="${title}.mp4"`);
+        ytdl(videoUrl, { format: "mp4" }).pipe(res);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send("Failed to download video");
+    }
+});
+
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
